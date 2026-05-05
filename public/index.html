@@ -1,0 +1,784 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BusTrace — Real-Time Transit</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      globalThis.MAPBOX_TOKEN = "";
+    </script>
+    <!-- Mapbox GL JS — loaded in <head> so mapboxgl is available when app.js runs -->
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
+    <link
+      href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css"
+      rel="stylesheet"
+    />
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            fontFamily: {
+              mono: ["Space Mono", "monospace"],
+              sans: ["DM Sans", "sans-serif"],
+            },
+            colors: {
+              brand: {
+                50: "#edfff4",
+                100: "#d5ffea",
+                200: "#aeffd6",
+                300: "#70ffb4",
+                400: "#2bef88",
+                500: "#00d166",
+                600: "#00a64f",
+                700: "#007f3e",
+                800: "#006434",
+                900: "#00532b",
+              },
+              surface: {
+                900: "#090c10",
+                800: "#0e1117",
+                700: "#151b24",
+                600: "#1c2534",
+                500: "#253045",
+              },
+            },
+            animation: {
+              "pulse-slow": "pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+              "slide-up": "slideUp 0.4s ease-out",
+              "fade-in": "fadeIn 0.3s ease-out",
+              shake: "shake 0.4s ease-in-out",
+            },
+            keyframes: {
+              slideUp: {
+                "0%": { transform: "translateY(20px)", opacity: 0 },
+                "100%": { transform: "translateY(0)", opacity: 1 },
+              },
+              fadeIn: { "0%": { opacity: 0 }, "100%": { opacity: 1 } },
+              shake: {
+                "0%,100%": { transform: "translateX(0)" },
+                "10%,30%,50%,70%,90%": { transform: "translateX(-4px)" },
+                "20%,40%,60%,80%": { transform: "translateX(4px)" },
+              },
+            },
+          },
+        },
+      };
+    </script>
+
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        background-color: #090c10;
+      }
+
+      .grid-bg {
+        background-image:
+          linear-gradient(rgba(0, 209, 102, 0.04) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(0, 209, 102, 0.04) 1px, transparent 1px);
+        background-size: 40px 40px;
+      }
+      .glass {
+        background: rgba(14, 17, 23, 0.85);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(0, 209, 102, 0.12);
+      }
+      .glass-light {
+        background: rgba(21, 27, 36, 0.9);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+      }
+
+      .dot-green {
+        background: #2bef88;
+        box-shadow: 0 0 8px #2bef88;
+      }
+      .dot-yellow {
+        background: #fbbf24;
+        box-shadow: 0 0 8px #fbbf24;
+      }
+      .dot-red {
+        background: #f87171;
+        box-shadow: 0 0 8px #f87171;
+      }
+
+      input,
+      select {
+        outline: none;
+      }
+      input:focus {
+        border-color: #00d166 !important;
+        box-shadow: 0 0 0 2px rgba(0, 209, 102, 0.15);
+      }
+
+      .star-filled {
+        color: #fbbf24;
+      }
+      .star-empty {
+        color: #374151;
+      }
+
+      ::-webkit-scrollbar {
+        width: 4px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #0e1117;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #253045;
+        border-radius: 2px;
+      }
+
+      .hidden {
+        display: none !important;
+      }
+
+      .skeleton {
+        animation: skeleton-loading 1.5s ease-in-out infinite alternate;
+        background: linear-gradient(
+          90deg,
+          #1c2534 0%,
+          #253045 50%,
+          #1c2534 100%
+        );
+        background-size: 200% 100%;
+      }
+      @keyframes skeleton-loading {
+        0% {
+          background-position: 0% 0%;
+        }
+        100% {
+          background-position: -200% 0%;
+        }
+      }
+
+      /* ════════════════════════════════════════
+       MAP  — these rules are the most important
+       ════════════════════════════════════════ */
+      #map-outer {
+        /* Tailwind's glass + rounded-2xl + overflow-hidden are set inline below;
+         we set explicit pixel height here to guarantee the container has size */
+        position: relative;
+        width: 100%;
+        height: 400px;
+        border-radius: 1rem;
+        overflow: hidden;
+      }
+      /* The actual Mapbox target — must be non-zero size */
+      #map {
+        position: absolute;
+        inset: 0; /* top:0 right:0 bottom:0 left:0 */
+        width: 100%;
+        height: 100%;
+      }
+
+      /* Mapbox control dark overrides */
+      .mapboxgl-ctrl-group {
+        background: #1c2534 !important;
+        border: 1px solid #253045 !important;
+      }
+      .mapboxgl-ctrl-group button {
+        background-color: #1c2534 !important;
+        color: #eee !important;
+      }
+      .mapboxgl-ctrl-group button:hover {
+        background-color: #253045 !important;
+      }
+      .mapboxgl-ctrl-group button + button {
+        border-top: 1px solid #253045 !important;
+      }
+      .mapboxgl-ctrl-attrib {
+        background: rgba(14, 17, 23, 0.7) !important;
+      }
+      .mapboxgl-ctrl-attrib a {
+        color: #9ca3af !important;
+      }
+      .mapboxgl-popup-content {
+        background: #151b24 !important;
+        color: #eee !important;
+        border: 1px solid rgba(0, 209, 102, 0.2);
+        border-radius: 10px !important;
+        padding: 10px 14px !important;
+        font-family: "Space Mono", monospace;
+        font-size: 12px;
+      }
+      .mapboxgl-popup-tip {
+        border-top-color: #151b24 !important;
+      }
+
+      /* Bus / stop custom markers */
+      .bus-marker {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        cursor: pointer;
+        border: 2px solid rgba(0, 209, 102, 0.6);
+        background: #151b24;
+        box-shadow: 0 0 12px rgba(0, 209, 102, 0.4);
+        transition: transform 0.3s ease;
+      }
+      .bus-marker:hover {
+        transform: scale(1.2);
+      }
+      .bus-marker.crowd-yellow {
+        border-color: rgba(251, 191, 36, 0.6);
+        box-shadow: 0 0 12px rgba(251, 191, 36, 0.4);
+      }
+      .bus-marker.crowd-red {
+        border-color: rgba(248, 113, 113, 0.6);
+        box-shadow: 0 0 12px rgba(248, 113, 113, 0.4);
+      }
+      .stop-marker {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #00d166;
+        border: 2px solid #090c10;
+        box-shadow: 0 0 6px rgba(0, 209, 102, 0.6);
+      }
+    </style>
+  </head>
+  <body class="font-sans text-gray-100 min-h-screen grid-bg">
+    <!-- ══════════════ NAV ══════════════ -->
+    <nav
+      class="glass sticky top-0 z-50 px-6 py-3 flex items-center justify-between"
+    >
+      <div class="flex items-center gap-3">
+        <div
+          class="w-8 h-8 rounded-lg bg-brand-500 flex items-center justify-center"
+        >
+          <span class="font-mono text-black font-bold text-sm">BT</span>
+        </div>
+        <span class="font-mono font-bold text-brand-400 tracking-tight text-lg"
+          >BusTrace</span
+        >
+      </div>
+      <div class="flex items-center gap-4">
+        <button
+          onclick="toggleTheme()"
+          class="text-gray-400 hover:text-brand-400 transition-colors text-sm"
+        >
+          <span id="theme-icon">☀️</span>
+        </button>
+        <div id="auth-status" class="flex items-center gap-3">
+          <button
+            onclick="showSection('login')"
+            class="text-sm text-gray-400 hover:text-white transition-colors"
+          >
+            Login
+          </button>
+          <button
+            onclick="showSection('login')"
+            class="text-sm bg-brand-500 hover:bg-brand-600 text-black font-semibold px-3 py-1.5 rounded-lg transition-colors"
+          >
+            Sign Up
+          </button>
+        </div>
+        <div id="user-info" class="hidden items-center gap-3">
+          <span id="user-phone" class="text-sm text-gray-400 font-mono"></span>
+          <button
+            onclick="logout()"
+            class="text-sm text-red-400 hover:text-red-300 transition-colors"
+          >
+            Logout
+          </button>
+        </div>
+      </div>
+    </nav>
+
+    <!-- ══════════════ MAIN LAYOUT ══════════════ -->
+    <main class="max-w-7xl mx-auto px-4 py-6 flex flex-col lg:flex-row gap-6">
+      <!-- LEFT PANEL -->
+      <div class="w-full lg:w-[420px] flex-shrink-0 flex flex-col gap-4">
+        <!-- SEARCH CARD -->
+        <div class="glass rounded-2xl p-5 animate-slide-up">
+          <h2
+            class="font-mono text-brand-400 text-sm font-bold tracking-widest uppercase mb-4"
+          >
+            Find Your Bus
+          </h2>
+          <div class="mb-3">
+            <label
+              class="text-xs text-gray-500 font-mono uppercase tracking-wider mb-1 block"
+              >From</label
+            >
+            <div class="relative">
+              <span
+                class="absolute left-3 top-1/2 -translate-y-1/2 text-brand-500 text-lg"
+                >◉</span
+              >
+              <input
+                id="src-input"
+                type="text"
+                placeholder="Source location..."
+                class="w-full bg-surface-700 text-white text-sm rounded-xl pl-9 pr-10 py-3 border border-surface-500 placeholder-gray-600 transition-all"
+                oninput="handleSearch(this, 'src')"
+              />
+              <button
+                onclick="useMyLocation()"
+                class="absolute right-2 top-1/2 -translate-y-1/2 text-brand-400 hover:text-brand-300 text-sm"
+                title="Use my location"
+              >
+                📍
+              </button>
+            </div>
+            <div
+              id="src-suggestions"
+              class="hidden mt-1 glass-light rounded-xl overflow-hidden z-10 relative"
+            ></div>
+          </div>
+          <div class="flex justify-center mb-3">
+            <button
+              onclick="swapLocations()"
+              class="w-8 h-8 rounded-full bg-surface-600 border border-surface-500 flex items-center justify-center text-brand-400 hover:bg-surface-500 transition-colors text-sm"
+            >
+              ⇅
+            </button>
+          </div>
+          <div class="mb-4">
+            <label
+              class="text-xs text-gray-500 font-mono uppercase tracking-wider mb-1 block"
+              >To</label
+            >
+            <div class="relative">
+              <span
+                class="absolute left-3 top-1/2 -translate-y-1/2 text-red-400 text-lg"
+                >◉</span
+              >
+              <input
+                id="dst-input"
+                type="text"
+                placeholder="Destination..."
+                class="w-full bg-surface-700 text-white text-sm rounded-xl pl-9 py-3 border border-surface-500 placeholder-gray-600 transition-all"
+                oninput="handleSearch(this, 'dst')"
+              />
+            </div>
+            <div
+              id="dst-suggestions"
+              class="hidden mt-1 glass-light rounded-xl overflow-hidden z-10 relative"
+            ></div>
+          </div>
+          <button
+            id="search-btn"
+            onclick="searchBuses()"
+            class="w-full bg-brand-500 hover:bg-brand-600 text-black font-bold py-3 rounded-xl transition-all font-mono text-sm tracking-wider"
+          >
+            SEARCH BUSES →
+          </button>
+        </div>
+
+        <!-- STATS ROW -->
+        <div class="grid grid-cols-3 gap-3">
+          <div class="glass-light rounded-xl p-3 text-center">
+            <div
+              id="stat-active"
+              class="font-mono font-bold text-brand-400 text-2xl"
+            >
+              0
+            </div>
+            <div class="text-gray-600 text-xs mt-0.5">Active Buses</div>
+          </div>
+          <div class="glass-light rounded-xl p-3 text-center">
+            <div
+              id="stat-stops"
+              class="font-mono font-bold text-white text-2xl"
+            >
+              —
+            </div>
+            <div class="text-gray-600 text-xs mt-0.5">Total Stops</div>
+          </div>
+          <div class="glass-light rounded-xl p-3 text-center">
+            <div
+              id="stat-routes"
+              class="font-mono font-bold text-white text-2xl"
+            >
+              3
+            </div>
+            <div class="text-gray-600 text-xs mt-0.5">Routes</div>
+          </div>
+        </div>
+
+        <!-- RESULTS -->
+        <div id="results-section" class="hidden flex-col gap-3">
+          <div class="flex items-center justify-between">
+            <span
+              id="results-count"
+              class="text-xs font-mono text-gray-500 uppercase tracking-wider"
+            ></span>
+            <button
+              onclick="
+                hideAll(['results-section', 'empty-state', 'error-state'])
+              "
+              class="text-xs text-gray-600 hover:text-gray-400 transition-colors font-mono"
+            >
+              ✕ Clear
+            </button>
+          </div>
+          <div
+            id="results-list"
+            class="flex flex-col gap-3 max-h-[420px] overflow-y-auto pr-1"
+          ></div>
+        </div>
+
+        <div
+          id="empty-state"
+          class="hidden glass-light rounded-2xl p-8 text-center"
+        >
+          <div class="text-4xl mb-3">🚌</div>
+          <div class="font-mono text-white text-sm font-bold mb-1">
+            No buses found
+          </div>
+          <div class="text-gray-600 text-xs">
+            Try a different route or check back later
+          </div>
+        </div>
+
+        <div
+          id="error-state"
+          class="hidden glass-light rounded-2xl p-6 border border-red-500 border-opacity-20"
+        >
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-red-400">⚠</span>
+            <span class="font-mono text-red-400 text-sm font-bold">Error</span>
+          </div>
+          <div id="error-msg" class="text-gray-400 text-sm"></div>
+        </div>
+      </div>
+      <!-- /LEFT PANEL -->
+
+      <!-- RIGHT PANEL -->
+      <div class="flex-1 flex flex-col gap-4">
+        <!-- ══ MAP AREA ══
+           #map-outer  = visible glass card with fixed 400px height
+           #map        = Mapbox target, fills #map-outer via position:absolute/inset:0
+           Both divs MUST have non-zero computed size for Mapbox to render. -->
+        <div id="map-outer" class="glass">
+          <div id="map"></div>
+
+          <!-- LIVE badge sits above the Mapbox canvas via z-index -->
+          <div
+            id="map-status-badge"
+            style="position: absolute; top: 12px; right: 12px; z-index: 10"
+            class="glass text-xs font-mono text-brand-400 px-2 py-1 rounded-lg flex items-center gap-1.5"
+          >
+            <span
+              class="w-1.5 h-1.5 rounded-full bg-brand-400 animate-pulse inline-block"
+            ></span>
+            LIVE
+          </div>
+
+          <!-- ── DEBUG OVERLAY ─────────────────────────────────────────────
+             Shows exactly what went wrong if the map still doesn't appear.
+             Remove the entire element once the map is working.           -->
+          <div
+            id="map-debug"
+            style="
+              position: absolute;
+              bottom: 8px;
+              left: 8px;
+              z-index: 10;
+              background: rgba(0, 0, 0, 0.82);
+              color: #2bef88;
+              font-family: monospace;
+              font-size: 10px;
+              line-height: 1.5;
+              padding: 5px 9px;
+              border-radius: 6px;
+              pointer-events: none;
+              max-width: 320px;
+              word-break: break-all;
+            "
+          >
+            ⏳ Waiting for app.js…
+          </div>
+        </div>
+
+        <!-- REVIEWS -->
+        <div class="glass rounded-2xl p-5">
+          <div class="flex items-center justify-between mb-4">
+            <h3
+              class="font-mono text-sm font-bold text-gray-300 uppercase tracking-wider"
+            >
+              Reviews
+            </h3>
+            <button
+              onclick="showSection('review')"
+              class="text-xs text-brand-400 border border-brand-500 border-opacity-40 hover:bg-brand-500 hover:bg-opacity-10 px-3 py-1.5 rounded-lg transition-all font-mono"
+            >
+              + Write Review
+            </button>
+          </div>
+          <div
+            id="reviews-list"
+            class="flex flex-col gap-3 max-h-52 overflow-y-auto"
+          >
+            <div class="text-gray-600 text-sm text-center py-4 font-mono">
+              Select a bus to see reviews
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- /RIGHT PANEL -->
+    </main>
+
+    <!-- ══════════════ MODALS ══════════════ -->
+
+    <!-- LOGIN -->
+    <div
+      id="modal-login"
+      class="hidden fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center p-4 animate-fade-in"
+    >
+      <div class="glass rounded-2xl p-8 w-full max-w-sm relative">
+        <button
+          onclick="hideModal('login')"
+          class="absolute top-4 right-4 text-gray-500 hover:text-white text-xl"
+        >
+          ×
+        </button>
+        <div class="text-center mb-6">
+          <div
+            class="w-12 h-12 rounded-2xl bg-brand-500 flex items-center justify-center mx-auto mb-3"
+          >
+            <span class="font-mono font-bold text-black text-xl">BT</span>
+          </div>
+          <h2 class="font-mono font-bold text-white text-xl">Sign In</h2>
+          <p class="text-gray-500 text-sm mt-1">OTP sent to your phone</p>
+        </div>
+        <div id="step-phone">
+          <label
+            class="text-xs text-gray-500 font-mono uppercase tracking-wider mb-2 block"
+            >Phone Number</label
+          >
+          <div class="flex gap-2 mb-4">
+            <div
+              class="glass-light rounded-xl px-3 py-3 text-sm text-gray-400 font-mono whitespace-nowrap"
+            >
+              +91
+            </div>
+            <input
+              id="phone-input"
+              type="tel"
+              maxlength="10"
+              placeholder="9876543210"
+              class="flex-1 bg-surface-700 text-white text-sm rounded-xl px-4 py-3 border border-surface-500 font-mono placeholder-gray-600 transition-all"
+              onkeydown="if (event.key === 'Enter') sendOTP();"
+            />
+          </div>
+          <button
+            id="send-otp-btn"
+            onclick="sendOTP()"
+            class="w-full bg-brand-500 hover:bg-brand-600 text-black font-semibold py-3 rounded-xl transition-all font-mono text-sm"
+          >
+            SEND OTP
+          </button>
+        </div>
+        <div id="step-otp" class="hidden">
+          <div class="text-center mb-4">
+            <div class="text-gray-400 text-sm">
+              OTP sent to
+              <span
+                id="otp-phone-display"
+                class="text-brand-400 font-mono"
+              ></span>
+            </div>
+            <div class="text-gray-600 text-xs mt-0.5">Valid for 5 minutes</div>
+          </div>
+          <label
+            class="text-xs text-gray-500 font-mono uppercase tracking-wider mb-2 block"
+            >Enter OTP</label
+          >
+          <input
+            id="otp-input"
+            type="text"
+            maxlength="6"
+            placeholder="••••••"
+            class="w-full bg-surface-700 text-white text-center text-2xl font-mono rounded-xl px-4 py-3 border border-surface-500 placeholder-gray-700 tracking-[0.5em] mb-4 transition-all"
+            onkeydown="if (event.key === 'Enter') verifyOTP();"
+          />
+          <button
+            id="verify-otp-btn"
+            onclick="verifyOTP()"
+            class="w-full bg-brand-500 hover:bg-brand-600 text-black font-semibold py-3 rounded-xl transition-all font-mono text-sm"
+          >
+            VERIFY &amp; LOGIN
+          </button>
+          <div class="flex justify-between mt-2">
+            <button
+              onclick="resetToPhone()"
+              class="text-gray-500 hover:text-gray-300 text-sm py-2 transition-colors"
+            >
+              ← Change number
+            </button>
+            <button
+              id="resend-otp-btn"
+              onclick="resendOTP()"
+              class="text-brand-400 hover:text-brand-300 text-sm py-2 transition-colors"
+            >
+              Resend OTP
+            </button>
+          </div>
+        </div>
+        <div
+          id="auth-error"
+          class="hidden mt-3 text-red-400 text-sm text-center font-mono"
+        ></div>
+      </div>
+    </div>
+
+    <!-- REVIEW -->
+    <div
+      id="modal-review"
+      class="hidden fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center p-4 animate-fade-in"
+    >
+      <div class="glass rounded-2xl p-8 w-full max-w-sm relative">
+        <button
+          onclick="hideModal('review')"
+          class="absolute top-4 right-4 text-gray-500 hover:text-white text-xl"
+        >
+          ×
+        </button>
+        <h2 class="font-mono font-bold text-white text-xl mb-1">
+          Write a Review
+        </h2>
+        <p class="text-gray-500 text-sm mb-5">Help others choose better</p>
+        <label
+          class="text-xs text-gray-500 font-mono uppercase tracking-wider mb-2 block"
+          >Bus ID</label
+        >
+        <input
+          id="review-bus-id"
+          type="text"
+          placeholder="BUS-001"
+          class="w-full bg-surface-700 text-white text-sm rounded-xl px-4 py-3 border border-surface-500 placeholder-gray-600 mb-4 transition-all"
+        />
+        <label
+          class="text-xs text-gray-500 font-mono uppercase tracking-wider mb-2 block"
+          >Rating</label
+        >
+        <div class="flex gap-2 mb-4" id="star-rating">
+          <span
+            onclick="setRating(1)"
+            class="star text-3xl cursor-pointer star-empty transition-all hover:scale-110"
+            >★</span
+          >
+          <span
+            onclick="setRating(2)"
+            class="star text-3xl cursor-pointer star-empty transition-all hover:scale-110"
+            >★</span
+          >
+          <span
+            onclick="setRating(3)"
+            class="star text-3xl cursor-pointer star-empty transition-all hover:scale-110"
+            >★</span
+          >
+          <span
+            onclick="setRating(4)"
+            class="star text-3xl cursor-pointer star-empty transition-all hover:scale-110"
+            >★</span
+          >
+          <span
+            onclick="setRating(5)"
+            class="star text-3xl cursor-pointer star-empty transition-all hover:scale-110"
+            >★</span
+          >
+        </div>
+        <label
+          class="text-xs text-gray-500 font-mono uppercase tracking-wider mb-2 block"
+          >Tags</label
+        >
+        <div class="flex flex-wrap gap-2 mb-4" id="tag-selector">
+          <span
+            onclick="toggleTag(this, 'clean')"
+            data-tag="clean"
+            class="tag text-xs border border-surface-500 text-gray-400 px-3 py-1.5 rounded-full cursor-pointer hover:border-brand-500 transition-all"
+            >✓ Clean</span
+          >
+          <span
+            onclick="toggleTag(this, 'punctual')"
+            data-tag="punctual"
+            class="tag text-xs border border-surface-500 text-gray-400 px-3 py-1.5 rounded-full cursor-pointer hover:border-brand-500 transition-all"
+            >⏱ Punctual</span
+          >
+          <span
+            onclick="toggleTag(this, 'comfortable')"
+            data-tag="comfortable"
+            class="tag text-xs border border-surface-500 text-gray-400 px-3 py-1.5 rounded-full cursor-pointer hover:border-brand-500 transition-all"
+            >💺 Comfortable</span
+          >
+          <span
+            onclick="toggleTag(this, 'safe')"
+            data-tag="safe"
+            class="tag text-xs border border-surface-500 text-gray-400 px-3 py-1.5 rounded-full cursor-pointer hover:border-brand-500 transition-all"
+            >🛡 Safe</span
+          >
+          <span
+            onclick="toggleTag(this, 'crowded')"
+            data-tag="crowded"
+            class="tag text-xs border border-surface-500 text-gray-400 px-3 py-1.5 rounded-full cursor-pointer hover:border-brand-500 transition-all"
+            >👥 Crowded</span
+          >
+        </div>
+        <label
+          class="text-xs text-gray-500 font-mono uppercase tracking-wider mb-2 block"
+          >Comment</label
+        >
+        <textarea
+          id="review-comment"
+          rows="3"
+          placeholder="Share your experience..."
+          class="w-full bg-surface-700 text-white text-sm rounded-xl px-4 py-3 border border-surface-500 placeholder-gray-600 resize-none mb-4 transition-all"
+        ></textarea>
+        <button
+          onclick="submitReview()"
+          class="w-full bg-brand-500 hover:bg-brand-600 text-black font-semibold py-3 rounded-xl transition-all font-mono text-sm"
+        >
+          SUBMIT REVIEW
+        </button>
+        <div
+          id="review-error"
+          class="hidden mt-3 text-red-400 text-sm text-center font-mono"
+        ></div>
+      </div>
+    </div>
+
+    <!-- BUS DETAIL -->
+    <div
+      id="modal-bus-detail"
+      class="hidden fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center p-4 animate-fade-in"
+    >
+      <div class="glass rounded-2xl p-6 w-full max-w-md relative">
+        <button
+          onclick="hideModal('bus-detail')"
+          class="absolute top-4 right-4 text-gray-500 hover:text-white text-xl"
+        >
+          ×
+        </button>
+        <div id="bus-detail-content"></div>
+      </div>
+    </div>
+
+    <!-- TOAST -->
+    <div
+      id="toast"
+      class="hidden fixed bottom-6 right-6 z-50 glass text-sm px-5 py-3 rounded-xl font-mono animate-slide-up max-w-xs"
+    ></div>
+
+    <!-- ── Scripts at very end of body ── -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

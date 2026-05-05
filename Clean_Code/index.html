@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BusTrace — Real-Time Transit</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            mono: ['Space Mono', 'monospace'],
+            sans: ['DM Sans', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#edfff4', 100: '#d5ffea', 200: '#aeffd6', 300: '#70ffb4',
+              400: '#2bef88', 500: '#00d166', 600: '#00a64f', 700: '#007f3e',
+              800: '#006434', 900: '#00532b',
+            },
+            surface: {
+              900: '#090c10', 800: '#0e1117', 700: '#151b24', 600: '#1c2534',
+              500: '#253045',
+            }
+          },
+          animation: {
+            'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            'slide-up': 'slideUp 0.4s ease-out',
+            'fade-in': 'fadeIn 0.3s ease-out',
+          },
+          keyframes: {
+            slideUp: { '0%': { transform: 'translateY(20px)', opacity: 0 }, '100%': { transform: 'translateY(0)', opacity: 1 } },
+            fadeIn: { '0%': { opacity: 0 }, '100%': { opacity: 1 } },
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { box-sizing: border-box; }
+    body { background-color: #090c10; }
+    .grid-bg {
+      background-image: linear-gradient(rgba(0,209,102,0.04) 1px, transparent 1px),
+                        linear-gradient(90deg, rgba(0,209,102,0.04) 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+    .glass {
+      background: rgba(14,17,23,0.85);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(0,209,102,0.12);
+    }
+    .glass-light { background: rgba(21,27,36,0.9); border: 1px solid rgba(255,255,255,0.06); }
+    .crowd-green { color: #2bef88; }
+    .crowd-yellow { color: #fbbf24; }
+    .crowd-red { color: #f87171; }
+    .dot-green { background: #2bef88; box-shadow: 0 0 8px #2bef88; }
+    .dot-yellow { background: #fbbf24; box-shadow: 0 0 8px #fbbf24; }
+    .dot-red { background: #f87171; box-shadow: 0 0 8px #f87171; }
+    input, select { outline: none; }
+    input:focus { border-color: #00d166 !important; box-shadow: 0 0 0 2px rgba(0,209,102,0.15); }
+    .star-filled { color: #fbbf24; }
+    .star-empty { color: #374151; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: #0e1117; }
+    ::-webkit-scrollbar-thumb { background: #253045; border-radius: 2px; }
+    .hidden { display: none !important; }
+    .skeleton { animation: skeleton-loading 1.5s ease-in-out infinite alternate; background: linear-gradient(90deg, #1c2534 0%, #253045 50%, #1c2534 100%); background-size: 200% 100%; }
+    @keyframes skeleton-loading { 0% { background-position: 0% 0%; } 100% { background-position: -200% 0%; } }
+    #map-placeholder { background: linear-gradient(135deg, #090c10 0%, #0e1117 50%, #090c10 100%); }
+    .map-pin { animation: bounce 1s ease-in-out infinite alternate; }
+    @keyframes bounce { 0% { transform: translateY(0); } 100% { transform: translateY(-6px); } }
+  </style>
+</head>
+<body class="font-sans text-gray-100 min-h-screen grid-bg">
+
+  <!-- =================== NAV =================== -->
+  <nav class="glass sticky top-0 z-50 px-6 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-brand-500 flex items-center justify-center">
+        <span class="font-mono text-black font-bold text-sm">BT</span>
+      </div>
+      <span class="font-mono font-bold text-brand-400 tracking-tight text-lg">BusTrace</span>
+    </div>
+    <div class="flex items-center gap-4">
+      <button onclick="toggleTheme()" class="text-gray-400 hover:text-brand-400 transition-colors text-sm">
+        <span id="theme-icon">☀️</span>
+      </button>
+      <div id="auth-status" class="flex items-center gap-3">
+        <button onclick="showSection('login')" class="text-sm text-gray-400 hover:text-white transition-colors">Login</button>
+        <button onclick="showSection('login')" class="text-sm bg-brand-500 hover:bg-brand-600 text-black font-semibold px-3 py-1.5 rounded-lg transition-colors">
+          Sign Up
+        </button>
+      </div>
+      <div id="user-info" class="hidden items-center gap-3">
+        <span id="user-phone" class="text-sm text-gray-400 font-mono"></span>
+        <button onclick="logout()" class="text-sm text-red-400 hover:text-red-300 transition-colors">Logout</button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- =================== MAIN LAYOUT =================== -->
+  <main class="max-w-7xl mx-auto px-4 py-6 flex flex-col lg:flex-row gap-6">
+
+    <!-- LEFT PANEL -->
+    <div class="w-full lg:w-[420px] flex-shrink-0 flex flex-col gap-4">
+
+      <!-- SEARCH CARD -->
+      <div class="glass rounded-2xl p-5 animate-slide-up">
+        <h2 class="font-mono text-brand-400 text-sm font-bold tracking-widest uppercase mb-4">Find Your Bus</h2>
+
+        <!-- FROM -->
+        <div class="mb-3">
+          <label class="text-xs text-gray-500 font-mono uppercase tracking-wider mb-1 block">From</label>
+          <div class="relative">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-brand-500 text-lg">◉</span>
+            <input id="src-input" type="text" placeholder="Source location..."
+              class="w-full bg-surface-700 text-white text-sm rounded-xl pl-9 pr-4 py-3 border border-surface-500 placeholder-gray-600 transition-all"
+              oninput="handleSearch(this,'src')" />
+          </div>
+          <div id="src-suggestions" class="hidden mt-1 glass-light rounded-xl overflow-hidden z-10 relative"></div>
+        </div>
+
+        <!-- SWAP -->
+        <div class="flex justify-center mb-3">
+          <button onclick="swapLocations()" class="w-8 h-8 rounded-full bg-surface-600 border border-surface-500 flex items-center justify-center text-brand-400 hover:bg-surface-500 transition-colors text-sm">⇅</button>
+        </div>
+
+        <!-- TO -->
+        <div class="mb-4">
+          <label class="text-xs text-gray-500 font-mono uppercase tracking-wider mb-1 block">To</label>
+          <div class="relative">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-red-400 text-lg">◎</span>
+            <input id="dst-input" type="text" placeholder="Destination..."
+              class="w-full bg-surface-700 text-white text-sm rounded-xl pl-9 pr-4 py-3 border border-surface-500 placeholder-gray-600 transition-all"
+              oninput="handleSearch(this,'dst')" />
+          </div>
+          <div id="dst-suggestions" class="hidden mt-1 glass-light rounded-xl overflow-hidden z-10 relative"></div>
+        </div>
+
+        <button onclick="searchBuses()" id="search-btn"
+          class="w-full bg-brand-500 hover:bg-brand-600 active:scale-95 text-black font-semibold py-3 rounded-xl transition-all duration-150 font-mono text-sm tracking-wide">
+          SEARCH BUSES →
+        </button>
+      </div>
+
+      <!-- LIVE STATS BAR -->
+      <div class="grid grid-cols-3 gap-3">
+        <div class="glass-light rounded-xl p-3 text-center">
+          <div class="text-brand-400 font-mono font-bold text-xl" id="stat-active">—</div>
+          <div class="text-gray-500 text-xs mt-0.5">Active Buses</div>
+        </div>
+        <div class="glass-light rounded-xl p-3 text-center">
+          <div class="text-yellow-400 font-mono font-bold text-xl" id="stat-stops">—</div>
+          <div class="text-gray-500 text-xs mt-0.5">Total Stops</div>
+        </div>
+        <div class="glass-light rounded-xl p-3 text-center">
+          <div class="text-blue-400 font-mono font-bold text-xl" id="stat-routes">3</div>
+          <div class="text-gray-500 text-xs mt-0.5">Routes</div>
+        </div>
+      </div>
+
+      <!-- RESULTS LIST -->
+      <div id="results-section" class="hidden flex flex-col gap-3 animate-fade-in">
+        <div class="flex items-center justify-between">
+          <h3 class="font-mono text-brand-400 text-sm font-bold tracking-wider uppercase">Results</h3>
+          <span id="results-count" class="text-xs text-gray-500 font-mono"></span>
+        </div>
+        <div id="results-list" class="flex flex-col gap-3 max-h-[520px] overflow-y-auto pr-1"></div>
+      </div>
+
+      <!-- EMPTY STATE -->
+      <div id="empty-state" class="hidden glass rounded-2xl p-8 text-center animate-fade-in">
+        <div class="text-4xl mb-3">🚌</div>
+        <div class="text-gray-400 text-sm font-mono">No buses found for this route</div>
+        <div class="text-gray-600 text-xs mt-1">Try expanding your search radius</div>
+      </div>
+
+      <!-- ERROR STATE -->
+      <div id="error-state" class="hidden glass rounded-2xl p-5 border border-red-900 animate-fade-in">
+        <div class="flex items-start gap-3">
+          <span class="text-red-400 text-xl">⚠</span>
+          <div>
+            <div class="text-red-400 text-sm font-mono font-bold">Error</div>
+            <div id="error-msg" class="text-gray-400 text-sm mt-0.5"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <div class="flex-1 flex flex-col gap-4">
+
+      <!-- MAP AREA -->
+      <div class="glass rounded-2xl overflow-hidden relative" style="height: 400px;">
+        <div id="map-placeholder" class="w-full h-full flex items-center justify-center relative overflow-hidden">
+          <!-- Decorative map grid -->
+          <svg class="absolute inset-0 w-full h-full opacity-20" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <pattern id="mapgrid" width="60" height="60" patternUnits="userSpaceOnUse">
+                <path d="M 60 0 L 0 0 0 60" fill="none" stroke="#00d166" stroke-width="0.5"/>
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill="url(#mapgrid)" />
+          </svg>
+          <!-- Route lines decoration -->
+          <svg class="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400">
+            <path d="M 80 200 Q 250 80 400 180 Q 550 280 720 160" stroke="#00d166" stroke-width="2" fill="none" stroke-dasharray="8,4" opacity="0.4" />
+            <path d="M 60 300 Q 200 200 380 240 Q 560 280 740 200" stroke="#3b82f6" stroke-width="2" fill="none" stroke-dasharray="8,4" opacity="0.3" />
+            <path d="M 100 120 Q 300 160 500 120 Q 650 90 760 140" stroke="#a855f7" stroke-width="2" fill="none" stroke-dasharray="8,4" opacity="0.25" />
+            <!-- Animated bus dots -->
+            <circle id="bus-dot-1" cx="350" cy="172" r="6" fill="#00d166" opacity="0.9">
+              <animate attributeName="cx" values="200;560" dur="8s" repeatCount="indefinite" />
+              <animate attributeName="cy" values="130;200" dur="8s" repeatCount="indefinite" />
+            </circle>
+            <circle id="bus-dot-2" cx="280" cy="230" r="5" fill="#3b82f6" opacity="0.9">
+              <animate attributeName="cx" values="120;680" dur="12s" repeatCount="indefinite" />
+              <animate attributeName="cy" values="260;210" dur="12s" repeatCount="indefinite" />
+            </circle>
+            <circle id="bus-dot-3" cx="500" cy="115" r="5" fill="#a855f7" opacity="0.8">
+              <animate attributeName="cx" values="550;160" dur="10s" repeatCount="indefinite" />
+              <animate attributeName="cy" values="110;130" dur="10s" repeatCount="indefinite" />
+            </circle>
+          </svg>
+          <!-- Center content -->
+          <div class="relative z-10 text-center">
+            <div class="text-4xl mb-2 map-pin">📍</div>
+            <div class="font-mono text-brand-400 text-sm font-bold">Live Map View</div>
+            <div class="text-gray-600 text-xs mt-1">Integrate Leaflet.js or Google Maps here</div>
+          </div>
+        </div>
+        <!-- Map overlay badge -->
+        <div class="absolute top-3 right-3 glass text-xs font-mono text-brand-400 px-2 py-1 rounded-lg flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-brand-400 animate-pulse inline-block"></span>
+          LIVE
+        </div>
+      </div>
+
+      <!-- REVIEWS PANEL -->
+      <div class="glass rounded-2xl p-5">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="font-mono text-sm font-bold text-gray-300 uppercase tracking-wider">Reviews</h3>
+          <button onclick="showSection('review')" id="write-review-btn"
+            class="text-xs text-brand-400 border border-brand-500 border-opacity-40 hover:bg-brand-500 hover:bg-opacity-10 px-3 py-1.5 rounded-lg transition-all font-mono">
+            + Write Review
+          </button>
+        </div>
+        <div id="reviews-list" class="flex flex-col gap-3 max-h-52 overflow-y-auto">
+          <div class="text-gray-600 text-sm text-center py-4 font-mono">Select a bus to see reviews</div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- =================== MODALS =================== -->
+
+  <!-- LOGIN MODAL -->
+  <div id="modal-login" class="hidden fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center p-4 animate-fade-in">
+    <div class="glass rounded-2xl p-8 w-full max-w-sm relative">
+      <button onclick="hideModal('login')" class="absolute top-4 right-4 text-gray-500 hover:text-white text-xl">×</button>
+      <div class="text-center mb-6">
+        <div class="w-12 h-12 rounded-2xl bg-brand-500 flex items-center justify-center mx-auto mb-3">
+          <span class="font-mono font-bold text-black text-xl">BT</span>
+        </div>
+        <h2 class="font-mono font-bold text-white text-xl">Sign In</h2>
+        <p class="text-gray-500 text-sm mt-1">OTP sent to your phone</p>
+      </div>
+
+      <!-- Step 1: Phone -->
+      <div id="step-phone">
+        <label class="text-xs text-gray-500 font-mono uppercase tracking-wider mb-2 block">Phone Number</label>
+        <div class="flex gap-2 mb-4">
+          <div class="glass-light rounded-xl px-3 py-3 text-sm text-gray-400 font-mono whitespace-nowrap">+91</div>
+          <input id="phone-input" type="tel" maxlength="10" placeholder="9876543210"
+            class="flex-1 bg-surface-700 text-white text-sm rounded-xl px-4 py-3 border border-surface-500 font-mono placeholder-gray-600 transition-all"
+            onkeydown="if(event.key==='Enter') sendOTP()" />
+        </div>
+        <button id="send-otp-btn" onclick="sendOTP()" class="w-full bg-brand-500 hover:bg-brand-600 text-black font-semibold py-3 rounded-xl transition-all font-mono text-sm">
+          SEND OTP
+        </button>
+      </div>
+
+      <!-- Step 2: OTP -->
+      <div id="step-otp" class="hidden">
+        <div class="text-center mb-4">
+          <div class="text-gray-400 text-sm">OTP sent to <span id="otp-phone-display" class="text-brand-400 font-mono"></span></div>
+          <div class="text-gray-600 text-xs mt-0.5">Valid for 5 minutes</div>
+        </div>
+        <label class="text-xs text-gray-500 font-mono uppercase tracking-wider mb-2 block">Enter OTP</label>
+        <input id="otp-input" type="text" maxlength="6" placeholder="••••••"
+          class="w-full bg-surface-700 text-white text-center text-2xl font-mono rounded-xl px-4 py-3 border border-surface-500 placeholder-gray-700 tracking-[0.5em] mb-4 transition-all"
+          onkeydown="if(event.key==='Enter') verifyOTP()" />
+        <button id="verify-otp-btn" onclick="verifyOTP()" class="w-full bg-brand-500 hover:bg-brand-600 text-black font-semibold py-3 rounded-xl transition-all font-mono text-sm">
+          VERIFY &amp; LOGIN
+        </button>
+        <button onclick="resetToPhone()" class="w-full text-gray-500 hover:text-gray-300 text-sm py-2 mt-2 transition-colors">← Change number</button>
+      </div>
+
+      <div id="auth-error" class="hidden mt-3 text-red-400 text-sm text-center font-mono"></div>
+    </div>
+  </div>
+
+  <!-- REVIEW MODAL -->
+  <div id="modal-review" class="hidden fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center p-4 animate-fade-in">
+    <div class="glass rounded-2xl p-8 w-full max-w-sm relative">
+      <button onclick="hideModal('review')" class="absolute top-4 right-4 text-gray-500 hover:text-white text-xl">×</button>
+      <h2 class="font-mono font-bold text-white text-xl mb-1">Write a Review</h2>
+      <p class="text-gray-500 text-sm mb-5">Help others choose better</p>
+
+      <label class="text-xs text-gray-500 font-mono uppercase tracking-wider mb-2 block">Bus ID</label>
+      <input id="review-bus-id" type="text" placeholder="BUS-001"
+        class="w-full bg-surface-700 text-white text-sm rounded-xl px-4 py-3 border border-surface-500 placeholder-gray-600 mb-4 transition-all" />
+
+      <label class="text-xs text-gray-500 font-mono uppercase tracking-wider mb-2 block">Rating</label>
+      <div class="flex gap-2 mb-4" id="star-rating">
+        <span onclick="setRating(1)" class="star text-3xl cursor-pointer star-empty transition-all hover:scale-110">★</span>
+        <span onclick="setRating(2)" class="star text-3xl cursor-pointer star-empty transition-all hover:scale-110">★</span>
+        <span onclick="setRating(3)" class="star text-3xl cursor-pointer star-empty transition-all hover:scale-110">★</span>
+        <span onclick="setRating(4)" class="star text-3xl cursor-pointer star-empty transition-all hover:scale-110">★</span>
+        <span onclick="setRating(5)" class="star text-3xl cursor-pointer star-empty transition-all hover:scale-110">★</span>
+      </div>
+
+      <label class="text-xs text-gray-500 font-mono uppercase tracking-wider mb-2 block">Tags</label>
+      <div class="flex flex-wrap gap-2 mb-4" id="tag-selector">
+        <span onclick="toggleTag(this,'clean')" data-tag="clean" class="tag text-xs border border-surface-500 text-gray-400 px-3 py-1.5 rounded-full cursor-pointer hover:border-brand-500 transition-all">✓ Clean</span>
+        <span onclick="toggleTag(this,'punctual')" data-tag="punctual" class="tag text-xs border border-surface-500 text-gray-400 px-3 py-1.5 rounded-full cursor-pointer hover:border-brand-500 transition-all">⏱ Punctual</span>
+        <span onclick="toggleTag(this,'comfortable')" data-tag="comfortable" class="tag text-xs border border-surface-500 text-gray-400 px-3 py-1.5 rounded-full cursor-pointer hover:border-brand-500 transition-all">💺 Comfortable</span>
+        <span onclick="toggleTag(this,'safe')" data-tag="safe" class="tag text-xs border border-surface-500 text-gray-400 px-3 py-1.5 rounded-full cursor-pointer hover:border-brand-500 transition-all">🛡 Safe</span>
+        <span onclick="toggleTag(this,'crowded')" data-tag="crowded" class="tag text-xs border border-surface-500 text-gray-400 px-3 py-1.5 rounded-full cursor-pointer hover:border-brand-500 transition-all">👥 Crowded</span>
+      </div>
+
+      <label class="text-xs text-gray-500 font-mono uppercase tracking-wider mb-2 block">Comment</label>
+      <textarea id="review-comment" rows="3" placeholder="Share your experience..."
+        class="w-full bg-surface-700 text-white text-sm rounded-xl px-4 py-3 border border-surface-500 placeholder-gray-600 resize-none mb-4 transition-all"></textarea>
+
+      <button onclick="submitReview()" class="w-full bg-brand-500 hover:bg-brand-600 text-black font-semibold py-3 rounded-xl transition-all font-mono text-sm">
+        SUBMIT REVIEW
+      </button>
+      <div id="review-error" class="hidden mt-3 text-red-400 text-sm text-center font-mono"></div>
+    </div>
+  </div>
+
+  <!-- BUS DETAIL MODAL -->
+  <div id="modal-bus-detail" class="hidden fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center p-4 animate-fade-in">
+    <div class="glass rounded-2xl p-6 w-full max-w-md relative">
+      <button onclick="hideModal('bus-detail')" class="absolute top-4 right-4 text-gray-500 hover:text-white text-xl">×</button>
+      <div id="bus-detail-content"></div>
+    </div>
+  </div>
+
+  <!-- TOAST -->
+  <div id="toast" class="hidden fixed bottom-6 right-6 z-50 glass text-sm px-5 py-3 rounded-xl font-mono animate-slide-up max-w-xs"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

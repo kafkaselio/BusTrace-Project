@@ -1,0 +1,67 @@
+[
+  {
+    "busId": "BUS-001",
+    "routeId": "ROUTE-A",
+    "driverId": "DRV-101",
+    "registrationNumber": "UP14 AT 7890",
+    "type": "AC",
+    "lat": 28.6352,
+    "lng": 77.2245,
+    "speed": 32,
+    "seatsAvailable": 8,
+    "capacity": 40,
+    "status": "active"
+  },
+  {
+    "busId": "BUS-002",
+    "routeId": "ROUTE-A",
+    "driverId": "DRV-102",
+    "registrationNumber": "UP14 BT 1234",
+    "type": "Non-AC",
+    "lat": 28.6420,
+    "lng": 77.2180,
+    "speed": 24,
+    "seatsAvailable": 22,
+    "capacity": 50,
+    "status": "active"
+  },
+  {
+    "busId": "BUS-003",
+    "routeId": "ROUTE-B",
+    "driverId": "DRV-103",
+    "registrationNumber": "DL1P 5678",
+    "type": "AC",
+    "lat": 28.6295,
+    "lng": 77.2310,
+    "speed": 18,
+    "seatsAvailable": 3,
+    "capacity": 35,
+    "status": "active"
+  },
+  {
+    "busId": "BUS-004",
+    "routeId": "ROUTE-B",
+    "driverId": "DRV-104",
+    "registrationNumber": "DL1P 9012",
+    "type": "Non-AC",
+    "lat": 28.6380,
+    "lng": 77.2150,
+    "speed": 0,
+    "seatsAvailable": 30,
+    "capacity": 50,
+    "status": "inactive"
+  },
+  {
+    "busId": "BUS-005",
+    "routeId": "ROUTE-C",
+    "driverId": "DRV-105",
+    "registrationNumber": "UP32 GH 4567",
+    "type": "Non-AC",
+    "lat": 28.6510,
+    "lng": 77.2390,
+    "speed": 28,
+    "seatsAvailable": 15,
+    "capacity": 45,
+    "status": "active"
+  }
+]

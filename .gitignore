@@ -1,0 +1,14 @@
+node_modules/
+.env
+.env.local
+.env.example
+dist/
+build/
+.vscode/
+node_modules/
+.env
+.env.local
+.env.example
+dist/
+build/
+.vscode/

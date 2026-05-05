@@ -1,0 +1,14 @@
+[
+  { "stopId": "S01", "name": "Connaught Place", "lat": 28.6315, "lng": 77.2167, "routeIds": ["ROUTE-A", "ROUTE-B"], "isTerminus": true },
+  { "stopId": "S02", "name": "Mandi House", "lat": 28.6258, "lng": 77.2321, "routeIds": ["ROUTE-A"], "landmark": "Near ITO" },
+  { "stopId": "S03", "name": "ITO Crossing", "lat": 28.6285, "lng": 77.2399, "routeIds": ["ROUTE-A", "ROUTE-C"], "landmark": "Near Delhi Secretariat" },
+  { "stopId": "S04", "name": "Pragati Maidan", "lat": 28.6197, "lng": 77.2460, "routeIds": ["ROUTE-A"], "landmark": "Exhibition Ground" },
+  { "stopId": "S05", "name": "Supreme Court", "lat": 28.6239, "lng": 77.2390, "routeIds": ["ROUTE-A", "ROUTE-B"] },
+  { "stopId": "S06", "name": "India Gate", "lat": 28.6129, "lng": 77.2295, "routeIds": ["ROUTE-B"], "isTerminus": false, "landmark": "War Memorial" },
+  { "stopId": "S07", "name": "Khan Market", "lat": 28.6001, "lng": 77.2258, "routeIds": ["ROUTE-B"] },
+  { "stopId": "S08", "name": "AIIMS", "lat": 28.5665, "lng": 77.2100, "routeIds": ["ROUTE-B"], "isTerminus": true, "landmark": "Hospital" },
+  { "stopId": "S09", "name": "Kashmere Gate", "lat": 28.6672, "lng": 77.2290, "routeIds": ["ROUTE-C"], "isTerminus": true },
+  { "stopId": "S10", "name": "Civil Lines", "lat": 28.6780, "lng": 77.2200, "routeIds": ["ROUTE-C"] },
+  { "stopId": "S11", "name": "Rajiv Chowk", "lat": 28.6328, "lng": 77.2197, "routeIds": ["ROUTE-A", "ROUTE-B", "ROUTE-C"], "landmark": "Metro Hub" },
+  { "stopId": "S12", "name": "Old Delhi Railway Station", "lat": 28.6567, "lng": 77.2150, "routeIds": ["ROUTE-C"], "isTerminus": false, "landmark": "Railway Station" }
+]
